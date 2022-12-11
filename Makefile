@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -fPIC -Wall -Wextra
+CFLAGS = -fPIC -Wall -Wextra -pthread -g
 
 .PHONY: build
 build: prepare
