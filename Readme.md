@@ -111,6 +111,8 @@ The scheduler does the following:
 You can find the project on [Github](https://github.com/VladNegoita/ThreadScheduler).
 
 ## References
-* Linux Manual Page: [stailq](https://man7.org/linux/man-pages/man3/stailq.3.html), [semaphores](https://man7.org/linux/man-pages/man7/sem_overview.7.html), [pthreads](https://man7.org/linux/man-pages/man7/pthreads.7.html).
+* Linux Manual Pages: [stailq](https://man7.org/linux/man-pages/man3/stailq.3.html), [semaphores](https://man7.org/linux/man-pages/man7/sem_overview.7.html), [pthreads](https://man7.org/linux/man-pages/man7/pthreads.7.html).
+
+* A. Silberschatz, G. Gagne, P. B. Galvin - Operating Systems Concepts, 2018, Publishing House - Wiley, New Jersey
 
 ###### Copyright Vlad Negoita 321CA vlad1negoita@gmail.com
