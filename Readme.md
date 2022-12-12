@@ -1,6 +1,6 @@
 # Thread Scheduler
 
-Preemtive POSIX thread scheduler that uses a round-robin technique.
+Preemptive POSIX thread scheduler that uses a round-robin technique.
 
 ## Contents
 
