@@ -2,6 +2,7 @@
 #include <sys/queue.h>
 #include <semaphore.h>
 #include <pthread.h>
+#include "utils.h"
 #include "util/so_scheduler.h"
 
 typedef struct {
@@ -119,12 +120,14 @@ void so_end(void) {
 		return;
 
 	/* give time to other threads for finishing their execution */
-	sem_wait(&scheduler.semaphore);
+	int err = sem_wait(&scheduler.semaphore);
+	DIE(err, "semaphore wait failed");
 
 	/* add the last running thread into the terminated list */
 	struct qentry *node;
 	if (scheduler.running) {
 		node = (struct qentry *) malloc(sizeof(struct qentry));
+		DIE(!node, "malloc failed");
 		node->thread = scheduler.running; 
 		STAILQ_INSERT_HEAD(&ended, node, qentries);
 	}
@@ -133,13 +136,14 @@ void so_end(void) {
 
 	/* joining threads */
 	STAILQ_FOREACH(node, &ended, qentries) {
-		int err = pthread_join(node->thread->tid, NULL);
+		err = pthread_join(node->thread->tid, NULL);
 		DIE(err, "thread join failed");
 	}
 
 	/*destroying semaphors and freeing memory necessary for threads */
 	STAILQ_FOREACH(node, &ended, qentries) {
-		sem_destroy(&node->thread->semaphore);
+		err = sem_destroy(&node->thread->semaphore);
+		DIE(err, "sem_destroy failed");
 		free(node->thread);
 	}
 
@@ -153,7 +157,8 @@ void so_end(void) {
 
 	free(events);
 	scheduler.initialised = 0;
-	sem_destroy(&scheduler.semaphore);
+	err = sem_destroy(&scheduler.semaphore);
+	DIE(err, "sem_destroy failed");
 }
 
 /* inserts a thread in the priority queue */
@@ -211,7 +216,8 @@ void choose_thread(void) {
 
 	/* we may now clear everything */
 	if (!threads_remaining() && (!scheduler.running || scheduler.running->status == 1)) {
-		sem_post(&scheduler.semaphore);
+		int err = sem_post(&scheduler.semaphore);
+		DIE(err, "sem_post failed");
 		return;
 	}
 
@@ -226,10 +232,12 @@ void choose_thread(void) {
 
 	/* first thread */
 	if (scheduler.running == NULL) {
-		sem_wait(&scheduler.semaphore);
+		int err = sem_wait(&scheduler.semaphore);
+		DIE(err, "sem_wait failed");
 		scheduler.running = thread;
 		thread->time_remaining = scheduler.time_quantum;
-		sem_post(&thread->semaphore);
+		err = sem_post(&thread->semaphore);
+		DIE(err, "sem_post failed");
 		return;
 	}
 
@@ -244,7 +252,8 @@ void choose_thread(void) {
 
 		thread->time_remaining = scheduler.time_quantum;
 		scheduler.running = thread;
-		sem_post(&thread->semaphore);
+		int err = sem_post(&thread->semaphore);
+		DIE(err, "sem_post failed");
 		return;
 	}
 
@@ -252,8 +261,10 @@ void choose_thread(void) {
 	if (scheduler.running->status == 2) {
 		thread->time_remaining = scheduler.time_quantum;
 		scheduler.running = thread;
-		sem_post(&thread->semaphore);
-		sem_wait(&aux->semaphore);
+		int err = sem_post(&thread->semaphore);
+		DIE(err, "sem_post failed");
+		err = sem_wait(&aux->semaphore);
+		DIE(err, "sem_wait failed");
 		return;
 	}
 
@@ -264,8 +275,10 @@ void choose_thread(void) {
 		insert_thread(scheduler.running, 0);
 		thread->time_remaining = scheduler.time_quantum;
 		scheduler.running = thread;
-		sem_post(&thread->semaphore);
-		sem_wait(&aux->semaphore);
+		int err = sem_post(&thread->semaphore);
+		DIE(err, "sem_post failed");
+		err = sem_wait(&aux->semaphore);
+		DIE(err, "sem_wait failed");
 		return;
 	}
 
@@ -276,8 +289,10 @@ void choose_thread(void) {
 			insert_thread(scheduler.running, 0);
 			thread->time_remaining = scheduler.time_quantum;
 			scheduler.running = thread;
-			sem_post(&thread->semaphore);
-			sem_wait(&aux->semaphore);
+			int err = sem_post(&thread->semaphore);
+			DIE(err, "sem_post failed");
+			err = sem_wait(&aux->semaphore);
+			DIE(err, "sem_wait failed");
 		} else {
 			insert_thread(thread, 1);
 			scheduler.running->time_remaining = scheduler.time_quantum;
@@ -309,6 +324,7 @@ int so_wait(unsigned int io) {
 	scheduler.running->time_remaining--;
 
 	struct qentry *node = (struct qentry *) malloc(sizeof(struct qentry));
+	DIE(!node, "malloc failed");
 	node->thread = scheduler.running;
 
 	STAILQ_INSERT_HEAD(&events[io], node, qentries);
