@@ -200,7 +200,6 @@ thread_t *get_thread(void) {
 	return thread;
 }
 
-static int first_time = 0;
 void choose_thread(void) {
 
 	if (!threads_remaining() && (!scheduler.running || scheduler.running->status == 1)) {
@@ -210,13 +209,15 @@ void choose_thread(void) {
 
 	thread_t *thread = get_thread(), *aux = scheduler.running;
 
-	if (!thread)
+	if (!thread) {
+		if (scheduler.running->time_remaining <= 0)
+			scheduler.running->time_remaining = scheduler.time_quantum;
 		return;
-
-	if (++first_time == 1)
-		sem_wait(&scheduler.semaphore);
+	}
 
 	if (scheduler.running == NULL) {
+		sem_wait(&scheduler.semaphore);
+		printf("first time");
 		scheduler.running = thread;
 		thread->time_remaining = scheduler.time_quantum;
 		sem_post(&thread->semaphore);
@@ -247,9 +248,11 @@ void choose_thread(void) {
 	}
 
 	if (scheduler.running->time_remaining <= 0) {
+		printf("fara timp\n");
 		if (scheduler.running->priority == thread->priority) {
 			insert_thread(scheduler.running, 0);
 			thread->time_remaining = scheduler.time_quantum;
+			scheduler.running = thread;
 			sem_post(&thread->semaphore);
 			sem_wait(&aux->semaphore);
 		} else {
@@ -303,5 +306,6 @@ void so_exec(void) {
 	if (scheduler.running)
 		scheduler.running->time_remaining--;
 
+	printf("%d\n", scheduler.running->time_remaining);
 	choose_thread();
 }
