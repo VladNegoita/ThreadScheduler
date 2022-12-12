@@ -28,13 +28,7 @@ struct qentry{
 
 STAILQ_HEAD(stailhead, qentry);
 
-struct lentry {
-	thread_t *thread;
-	LIST_ENTRY(lentry) lentries;
-};
-
-LIST_HEAD(listhead, lentry);
-
+/* helpers */
 void insert_thread(thread_t *thread, int front);
 void *thread_func(void *args);
 thread_t *get_thread(void);
@@ -45,11 +39,13 @@ int threads_remaining();
 static scheduler_t scheduler;
 
 /* the priority queue -> 6 (0 -> 5) queues that will store the threads ordered by priorities */
-static struct stailhead *ready;
+static struct stailhead ready[1 + SO_MAX_PRIO];
+
+/* list of terminated threads */
 static struct stailhead ended;
 
 /* list of events-blocked threads organised by events */
-static struct listhead *events;
+static struct stailhead *events;
 
 int so_init(unsigned int time_quantum, unsigned int io) {
 
@@ -58,16 +54,14 @@ int so_init(unsigned int time_quantum, unsigned int io) {
 		return -1;
 
 	/* priority queue initialisation */
-	ready = (struct stailhead *) malloc((1 + SO_MAX_PRIO) * sizeof(struct stailhead));
-	DIE(!ready, "malloc failed");
 	for (int i = 0; i <= SO_MAX_PRIO; ++i)
 		STAILQ_INIT(&ready[i]);
 
 	/* list of events-blocked threads initialisation */
-	events = (struct listhead *) malloc((1 + io) * sizeof(struct listhead));
+	events = (struct stailhead *) malloc((1 + io) * sizeof(struct stailhead));
 	DIE(!events, "malloc failed");
 	for (unsigned int i = 0; i <= io; ++i)
-		LIST_INIT(&events[i]);
+		STAILQ_INIT(&events[i]);
 
 	STAILQ_INIT(&ended);
 
@@ -148,12 +142,12 @@ void so_end(void) {
 		n1 = n2;
 	}
 
-	free(ready);
 	free(events);
 	scheduler.initialised = 0;
 	sem_destroy(&scheduler.semaphore);
 }
 
+/* inserts a thread in the priority queue */
 void insert_thread(thread_t *thread, int front) {
 	struct qentry *node = (struct qentry *) malloc(sizeof(struct qentry));
 	DIE(!node, "malloc failed");
@@ -165,6 +159,7 @@ void insert_thread(thread_t *thread, int front) {
 		STAILQ_INSERT_TAIL(&ready[thread->priority], node, qentries);
 }
 
+/* the function a thread will execute (thread routine) */
 void *thread_func(void *args) {
 
 	thread_t *thread = (thread_t *)args;
@@ -180,6 +175,7 @@ void *thread_func(void *args) {
 	return NULL;
 }
 
+/* gets the highest priority ready thread from the priority_queue */
 thread_t *get_thread(void) {
 
 	struct qentry *node = NULL;
@@ -202,6 +198,7 @@ thread_t *get_thread(void) {
 
 void choose_thread(void) {
 
+	/* we may now clear everything */
 	if (!threads_remaining() && (!scheduler.running || scheduler.running->status == 1)) {
 		sem_post(&scheduler.semaphore);
 		return;
@@ -209,12 +206,14 @@ void choose_thread(void) {
 
 	thread_t *thread = get_thread(), *aux = scheduler.running;
 
+	/* the only remaining one is the running one */
 	if (!thread) {
 		if (scheduler.running->time_remaining <= 0)
 			scheduler.running->time_remaining = scheduler.time_quantum;
 		return;
 	}
 
+	/* first thread */
 	if (scheduler.running == NULL) {
 		sem_wait(&scheduler.semaphore);
 		printf("first time");
@@ -224,6 +223,7 @@ void choose_thread(void) {
 		return;
 	}
 
+	/* terminated thread */
 	if (scheduler.running->status == 1) {
 
 		struct qentry *node = (struct qentry *) malloc(sizeof(struct qentry));
@@ -238,6 +238,15 @@ void choose_thread(void) {
 		return;
 	}
 
+	/* blocked thread */
+	if (scheduler.running->status == 2) {
+		thread->time_remaining = scheduler.time_quantum;
+		scheduler.running = thread;
+		sem_post(&thread->semaphore);
+		sem_wait(&aux->semaphore);
+	}
+
+	/* a greater priority thread appeared */
 	if (scheduler.running->priority < thread->priority) {
 		insert_thread(scheduler.running, 0);
 		thread->time_remaining = scheduler.time_quantum;
@@ -247,8 +256,9 @@ void choose_thread(void) {
 		return;
 	}
 
+	/* change the thread after time_quant if another thread
+	of equal priority exists, maintain equity */
 	if (scheduler.running->time_remaining <= 0) {
-		printf("fara timp\n");
 		if (scheduler.running->priority == thread->priority) {
 			insert_thread(scheduler.running, 0);
 			thread->time_remaining = scheduler.time_quantum;
@@ -265,6 +275,7 @@ void choose_thread(void) {
 	insert_thread(thread, 1);
 }
 
+/* checks whether there are reamining threads in the ready state */
 int threads_remaining() {
 
 	for (int priority = 0; priority <= SO_MAX_PRIO; ++priority)
@@ -274,38 +285,50 @@ int threads_remaining() {
 	return 0;
 }
 
-/*
- * waits for an IO device
- * + device index
- * returns: -1 if the device does not exist or 0 on success
- */
 int so_wait(unsigned int io) {
 
 	/* exceptions */
 	if (io > scheduler.io)
 		return -1;
 
-	return -1;
+	scheduler.running->status = 2;
+	scheduler.running->time_remaining--;
+
+	struct qentry *node = (struct qentry *) malloc(sizeof(struct qentry));
+	node->thread = scheduler.running;
+
+	STAILQ_INSERT_HEAD(&events[io], node, qentries);
+
+	choose_thread();
+
+	return 0;
 }
 
-/*
- * signals an IO device
- * + device index
- * return the number of tasks woke or -1 on error
- */
 int so_signal(unsigned int io) {
 
 	/* exceptions */
-	if (io > SO_MAX_NUM_EVENTS)
+	if (io > scheduler.io)
 		return -1;
 
-	return -1;
+	struct qentry *node = NULL;
+	int count_signaled_threads = 0;
+	while (!STAILQ_EMPTY(&events[io])) {
+		node = STAILQ_FIRST(&events[io]);
+		node->thread->status = 0;
+		insert_thread(node->thread, 0);
+		STAILQ_REMOVE_HEAD(&events[io], qentries);
+		++count_signaled_threads;
+	}
+
+	scheduler.running->time_remaining--;
+	choose_thread();
+
+	return count_signaled_threads;
 }
 
 void so_exec(void) {
 	if (scheduler.running)
 		scheduler.running->time_remaining--;
 
-	printf("%d\n", scheduler.running->time_remaining);
 	choose_thread();
 }
