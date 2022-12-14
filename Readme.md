@@ -16,22 +16,15 @@ Here you have the file hierarchy:
 │   ├── _log
 │   ├── _test
 │   │   ├── output.ref
-│   │   ├── run_test
 │   │   ├── run_test.c
 │   │   ├── run_test.h
-│   │   ├── run_test.o
 │   │   ├── scheduler_test.h
 │   │   ├── so_scheduler.h
 │   │   ├── test_exec.c
-│   │   ├── test_exec.o
 │   │   ├── test_io.c
-│   │   ├── test_io.o
-│   │   ├── test_sched.c
-│   │   └── test_sched.o
+│   │   └── test_sched.c
 │   └── run_all.sh
-├── libscheduler.so
 ├── so_scheduler.c
-├── so_scheduler.o
 ├── util
 │   └── so_scheduler.h
 └── utils.h
